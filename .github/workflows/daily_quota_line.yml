@@ -1,0 +1,29 @@
+name: Daily Antigravity Gemini Quota LINE Report
+
+on:
+  schedule:
+    # 22:47 UTC = 05:47 Asia/Bangkok (UTC+7)
+    - cron: '47 22 * * *'
+  workflow_dispatch:
+
+jobs:
+  check-and-notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run Quota Check and Send LINE Message
+        env:
+          LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+          ACCOUNT_EMAIL: ${{ secrets.ACCOUNT_EMAIL }}
+          QUOTA_JSON_DATA: ${{ secrets.QUOTA_JSON_DATA }}
+          QUOTA_API_URL: ${{ secrets.QUOTA_API_URL }}
+          QUOTA_API_TOKEN: ${{ secrets.QUOTA_API_TOKEN }}
+        run: python3 check_quota.py
