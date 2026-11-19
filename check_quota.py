@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Daily Antigravity / Gemini (Google AI Pro) quota checker & LINE push notifier.
-Formats messages in Thai (Asia/Bangkok time) according to the exact specification.
+Formats detailed per-model usage in Thai (Asia/Bangkok time).
 """
 
 import json
@@ -52,11 +52,39 @@ def parse_iso_datetime(val: str) -> datetime:
     return dt
 
 
-def format_pct(val: float) -> str:
-    """Format percentage nicely (integer if whole, otherwise up to 1 decimal)."""
+def format_pct(val: float, detailed: bool = False) -> str:
+    """Format percentage nicely."""
+    if not detailed and abs(val - round(val)) < 1e-6:
+        return str(int(round(val)))
     if abs(val - round(val)) < 1e-6:
         return str(int(round(val)))
     return f"{val:.1f}"
+
+
+def format_remaining_short(reset_dt: datetime, now: datetime) -> str:
+    rem_sec = max(0.0, (reset_dt - now).total_seconds())
+    days = int(rem_sec // 86400)
+    hours = int((rem_sec % 86400) // 3600)
+    mins = int((rem_sec % 3600) // 60)
+    if days > 0:
+        return f"เหลือ {days} วัน {hours} ชม."
+    if hours > 0:
+        return f"เหลือ {hours} ชม. {mins} นาที"
+    return f"เหลือ {mins} นาที"
+
+
+def summarize_model_groups(entries: list[dict], group_defs: list[tuple[str, tuple[str, ...]]]) -> list[tuple[str, float]]:
+    """Group model variants into readable summary rows with their max used_percent."""
+    results = []
+    for display_name, prefixes in group_defs:
+        matched = [
+            e["used_percent"]
+            for e in entries
+            if any(p.lower() in e.get("label", "").lower() for p in prefixes)
+        ]
+        if matched:
+            results.append((display_name, max(matched)))
+    return results
 
 
 def build_success_message(
@@ -65,21 +93,58 @@ def build_success_message(
     weekly_reset: datetime,
     five_hour_used: float | None = None,
     five_hour_reset: datetime | None = None,
+    plan_name: str | None = None,
+    five_hour_models: list[dict] | None = None,
+    weekly_models: list[dict] | None = None,
+    updated_at: datetime | None = None,
     now: datetime | None = None,
 ) -> str:
     if now is None:
         now = datetime.now(BKK_TZ)
 
-    lines = [f"☀️ Gemini · {email}"]
+    header_plan = f" ({plan_name})" if plan_name else ""
+    lines = [f"☀️ Gemini{header_plan} · {email}"]
 
     if five_hour_used is not None and five_hour_reset is not None:
+        rem_5h = format_remaining_short(five_hour_reset, now)
         lines.append(
-            f"• ลิมิต 5 ชั่วโมง: {format_pct(five_hour_used)}% (รีเซ็ต {format_bkk_datetime(five_hour_reset)})"
+            f"• ลิมิต 5 ชั่วโมง: {format_pct(five_hour_used)}% (รีเซ็ต {format_bkk_datetime(five_hour_reset)} · {rem_5h})"
         )
+        if five_hour_models:
+            groups_5h = summarize_model_groups(
+                five_hour_models,
+                [
+                    ("Gemini 4 Neon / Hydrogen", ("Neon", "Hydrogen")),
+                    ("Gemini 3.8 Flash", ("Flash",)),
+                    ("Claude 5.5 Opus / Sonnet", ("Claude",)),
+                    ("GPT-OSS 120B", ("GPT-OSS",)),
+                ],
+            )
+            for idx, (g_name, g_used) in enumerate(groups_5h):
+                branch = "└─" if idx == len(groups_5h) - 1 else "├─"
+                rem_pct = max(0.0, 100.0 - g_used)
+                lines.append(
+                    f"  {branch} {g_name}: ใช้ไป {format_pct(g_used, True)}% (เหลือ {format_pct(rem_pct, True)}%)"
+                )
 
+    rem_wk_str = format_remaining_short(weekly_reset, now)
     lines.append(
-        f"• ลิมิตรายสัปดาห์: {format_pct(weekly_used)}% (รีเซ็ต {format_bkk_datetime(weekly_reset)})"
+        f"• ลิมิตรายสัปดาห์: {format_pct(weekly_used)}% (รีเซ็ต {format_bkk_datetime(weekly_reset)} · {rem_wk_str})"
     )
+    if weekly_models:
+        groups_wk = summarize_model_groups(
+            weekly_models,
+            [
+                ("Gemini 4 Argon", ("Gemini 4 Argon",)),
+                ("Orchestrator (Argon)", ("Orchestrator (Argon)",)),
+            ],
+        )
+        for idx, (g_name, g_used) in enumerate(groups_wk):
+            branch = "└─" if idx == len(groups_wk) - 1 else "├─"
+            rem_pct = max(0.0, 100.0 - g_used)
+            lines.append(
+                f"  {branch} {g_name}: ใช้ไป {format_pct(g_used, True)}% (เหลือ {format_pct(rem_pct, True)}%)"
+            )
 
     rem_seconds = max(0.0, (weekly_reset - now).total_seconds())
     rem_hours_total = rem_seconds / 3600.0
@@ -97,6 +162,9 @@ def build_success_message(
     else:
         lines.append("✅ ปกติ")
 
+    if updated_at is not None:
+        lines.append(f"🕒 ซิงก์ล่าสุด: {format_bkk_datetime(updated_at)}")
+
     return "\n".join(lines)
 
 
@@ -105,23 +173,23 @@ def build_error_message(email: str, reason: str) -> str:
 
 
 def normalize_quota_payload(data: dict) -> dict:
-    """
-    Accepts:
-    1) Antigravity language_server GetUserStatus JSON:
-       Separates models into 5-hour window (reset <= 12 hours away) and weekly window
-       (reset > 12 hours away) and picks the most-used model in each window.
-    2) Per-model array under "models"
-    3) Direct normalized JSON with "five_hour" and "weekly" keys.
-    """
     email = data.get("email") or os.environ.get("ACCOUNT_EMAIL") or "tonmai7272@gmail.com"
     ref_now = datetime.now(timezone.utc)
+    updated_dt = None
     if "updated_at" in data:
         try:
-            ref_now = parse_iso_datetime(data["updated_at"])
+            updated_dt = parse_iso_datetime(data["updated_at"])
+            ref_now = updated_dt
         except Exception:
             pass
 
     user_status = data.get("userStatus") or data
+    plan_name = (
+        user_status.get("planName")
+        or user_status.get("planStatus", {}).get("planInfo", {}).get("planName")
+        or "Pro"
+    )
+
     if "cascadeModelConfigData" in user_status:
         configs = user_status["cascadeModelConfigData"].get("clientModelConfigs", [])
         five_hour_candidates = []
@@ -143,7 +211,6 @@ def normalize_quota_payload(data: dict) -> dict:
                 "reset_at": reset_str,
                 "reset_dt": reset_dt,
             }
-            # 5-hour refresh window vs 7-day weekly window
             if hours_ahead <= 12.0:
                 five_hour_candidates.append(entry)
             else:
@@ -163,6 +230,8 @@ def normalize_quota_payload(data: dict) -> dict:
         if best_weekly:
             return {
                 "email": user_status.get("email") or email,
+                "plan_name": plan_name,
+                "updated_at": updated_dt,
                 "five_hour": (
                     {"used_percent": best_5h["used_percent"], "reset_at": best_5h["reset_at"]}
                     if best_5h
@@ -172,6 +241,8 @@ def normalize_quota_payload(data: dict) -> dict:
                     "used_percent": best_weekly["used_percent"],
                     "reset_at": best_weekly["reset_at"],
                 },
+                "five_hour_models": five_hour_candidates,
+                "weekly_models": weekly_candidates,
             }
 
     if isinstance(data.get("models"), list) and data["models"]:
@@ -186,15 +257,23 @@ def normalize_quota_payload(data: dict) -> dict:
         )
         return {
             "email": data.get("email") or email,
+            "plan_name": plan_name,
+            "updated_at": updated_dt,
             "five_hour": most_used.get("five_hour"),
             "weekly": most_used.get("weekly"),
+            "five_hour_models": None,
+            "weekly_models": None,
         }
 
     if "weekly" in data:
         return {
             "email": email,
+            "plan_name": plan_name,
+            "updated_at": updated_dt,
             "five_hour": data.get("five_hour"),
             "weekly": data.get("weekly"),
+            "five_hour_models": None,
+            "weekly_models": None,
         }
 
     raise ValueError("รูปแบบ JSON ไม่มีฟิลด์ weekly หรือ cascadeModelConfigData ที่รองรับ")
@@ -287,6 +366,10 @@ def main() -> None:
             weekly_reset=w_reset,
             five_hour_used=fh_used,
             five_hour_reset=fh_reset,
+            plan_name=quota.get("plan_name"),
+            five_hour_models=quota.get("five_hour_models"),
+            weekly_models=quota.get("weekly_models"),
+            updated_at=quota.get("updated_at"),
         )
     except Exception as exc:
         message = build_error_message(email=email, reason=str(exc))
