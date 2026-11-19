@@ -3,10 +3,8 @@
 Local helper for macOS running Antigravity IDE:
 Finds the running Antigravity language_server process, queries GetUserStatus
 from its local port to read the exact quota shown in the Antigravity IDE status bar,
-saves it to quota_state.json, and pushes to GitHub (or updates QUOTA_JSON_DATA secret).
-
-Can also be invoked with manual values if needed:
-  python3 sync_from_mac_ide.py --weekly-used 35 --weekly-reset "2026-11-21T14:00:00+07:00"
+saves sanitized quota JSON (without tokens or private profile fields) to quota_state.json,
+and optionally pushes to GitHub.
 """
 
 import argparse
@@ -89,6 +87,34 @@ def query_local_user_status(server_info: dict):
     return None
 
 
+def sanitize_user_status(raw: dict) -> dict:
+    """Keep only email and model quotaInfo (never write tokens or sensitive fields)."""
+    us = raw.get("userStatus", raw)
+    email = us.get("email") or "tonmai7272@gmail.com"
+    configs = us.get("cascadeModelConfigData", {}).get("clientModelConfigs", [])
+    clean_configs = []
+    for c in configs:
+        if "quotaInfo" in c and c["quotaInfo"]:
+            clean_configs.append(
+                {
+                    "label": c.get("label", ""),
+                    "quotaInfo": {
+                        "remainingFraction": c["quotaInfo"].get("remainingFraction", 1),
+                        "resetTime": c["quotaInfo"].get("resetTime", ""),
+                    },
+                }
+            )
+    return {
+        "updated_at": datetime.now(BKK_TZ).isoformat(),
+        "userStatus": {
+            "email": email,
+            "cascadeModelConfigData": {
+                "clientModelConfigs": clean_configs,
+            },
+        },
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Sync Antigravity IDE quota to GitHub")
     parser.add_argument("--email", help="Account email")
@@ -102,7 +128,7 @@ def main():
     payload = None
     if args.weekly_used is not None and args.weekly_reset:
         payload = {
-            "email": args.email or os.environ.get("ACCOUNT_EMAIL", "unknown"),
+            "email": args.email or os.environ.get("ACCOUNT_EMAIL", "tonmai7272@gmail.com"),
             "weekly": {
                 "used_percent": args.weekly_used,
                 "reset_at": args.weekly_reset,
@@ -119,7 +145,7 @@ def main():
         if srv:
             raw = query_local_user_status(srv)
             if raw:
-                payload = raw
+                payload = sanitize_user_status(raw)
 
     if not payload:
         print("Could not auto-detect running Antigravity IDE language server or manual args.", file=sys.stderr)

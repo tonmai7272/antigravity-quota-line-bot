@@ -106,52 +106,74 @@ def build_error_message(email: str, reason: str) -> str:
 
 def normalize_quota_payload(data: dict) -> dict:
     """
-    Accepts either:
-    1) Direct normalized JSON:
-       {
-         "email": "user@gmail.com",
-         "five_hour": {"used_percent": 20, "reset_at": "2026-11-19T12:00:00Z"},
-         "weekly": {"used_percent": 45, "reset_at": "2026-11-22T00:00:00Z"}
-       }
-    2) Per-model array under "models" (selects the most-used model by weekly used_percent):
-       {
-         "email": "user@gmail.com",
-         "models": [
-           {
-             "model": "gemini-2.5-pro",
-             "five_hour": {"used_percent": 15, "reset_at": "..."},
-             "weekly": {"used_percent": 42, "reset_at": "..."}
-           }
-         ]
-       }
-    3) Antigravity language-server / Cascade userStatus structure if present.
+    Accepts:
+    1) Antigravity language_server GetUserStatus JSON:
+       Separates models into 5-hour window (reset <= 12 hours away) and weekly window
+       (reset > 12 hours away) and picks the most-used model in each window.
+    2) Per-model array under "models"
+    3) Direct normalized JSON with "five_hour" and "weekly" keys.
     """
-    email = data.get("email") or os.environ.get("ACCOUNT_EMAIL") or "unknown"
+    email = data.get("email") or os.environ.get("ACCOUNT_EMAIL") or "tonmai7272@gmail.com"
+    ref_now = datetime.now(timezone.utc)
+    if "updated_at" in data:
+        try:
+            ref_now = parse_iso_datetime(data["updated_at"])
+        except Exception:
+            pass
 
-    # Case 3: Antigravity Cascade userStatus / clientModelConfigs
     user_status = data.get("userStatus") or data
     if "cascadeModelConfigData" in user_status:
         configs = user_status["cascadeModelConfigData"].get("clientModelConfigs", [])
-        best_model = None
-        best_used = -1.0
+        five_hour_candidates = []
+        weekly_candidates = []
+
         for cfg in configs:
             quota = cfg.get("quotaInfo") or {}
-            if "remainingFraction" in quota:
-                used = round((1.0 - float(quota["remainingFraction"])) * 100.0, 1)
-                if used > best_used:
-                    best_used = used
-                    best_model = {
-                        "used_percent": used,
-                        "reset_at": quota.get("resetTime"),
-                    }
-        if best_model and best_model.get("reset_at"):
+            if "remainingFraction" not in quota or "resetTime" not in quota:
+                continue
+            rem = float(quota["remainingFraction"])
+            used = round(max(0.0, (1.0 - rem) * 100.0), 1)
+            reset_str = quota["resetTime"]
+            reset_dt = parse_iso_datetime(reset_str)
+            hours_ahead = (reset_dt - ref_now).total_seconds() / 3600.0
+
+            entry = {
+                "label": cfg.get("label", ""),
+                "used_percent": used,
+                "reset_at": reset_str,
+                "reset_dt": reset_dt,
+            }
+            # 5-hour refresh window vs 7-day weekly window
+            if hours_ahead <= 12.0:
+                five_hour_candidates.append(entry)
+            else:
+                weekly_candidates.append(entry)
+
+        best_5h = None
+        if five_hour_candidates:
+            best_5h = max(five_hour_candidates, key=lambda x: x["used_percent"])
+
+        best_weekly = None
+        if weekly_candidates:
+            best_weekly = max(weekly_candidates, key=lambda x: x["used_percent"])
+        elif best_5h:
+            best_weekly = best_5h
+            best_5h = None
+
+        if best_weekly:
             return {
                 "email": user_status.get("email") or email,
-                "five_hour": None,
-                "weekly": best_model,
+                "five_hour": (
+                    {"used_percent": best_5h["used_percent"], "reset_at": best_5h["reset_at"]}
+                    if best_5h
+                    else None
+                ),
+                "weekly": {
+                    "used_percent": best_weekly["used_percent"],
+                    "reset_at": best_weekly["reset_at"],
+                },
             }
 
-    # Case 2: Per-model report -> pick the most-used model
     if isinstance(data.get("models"), list) and data["models"]:
         models = data["models"]
         most_used = max(
@@ -168,7 +190,6 @@ def normalize_quota_payload(data: dict) -> dict:
             "weekly": most_used.get("weekly"),
         }
 
-    # Case 1: Direct top-level windows
     if "weekly" in data:
         return {
             "email": email,
@@ -176,16 +197,10 @@ def normalize_quota_payload(data: dict) -> dict:
             "weekly": data.get("weekly"),
         }
 
-    raise ValueError("รูปแบบ JSON ไม่มีฟิลด์ weekly หรือ models ที่รองรับ")
+    raise ValueError("รูปแบบ JSON ไม่มีฟิลด์ weekly หรือ cascadeModelConfigData ที่รองรับ")
 
 
 def fetch_quota_data() -> dict:
-    """
-    Attempt to read quota data from:
-    1. QUOTA_JSON_DATA env var
-    2. QUOTA_JSON_FILE env var or ./quota_state.json file in repo
-    3. QUOTA_API_URL env var (with optional QUOTA_API_TOKEN)
-    """
     raw_json = os.environ.get("QUOTA_JSON_DATA", "").strip()
     if raw_json:
         return normalize_quota_payload(json.loads(raw_json))
@@ -209,7 +224,7 @@ def fetch_quota_data() -> dict:
             return normalize_quota_payload(json.loads(body))
 
     raise RuntimeError(
-        "ยังไม่มีข้อมูลโควตาจาก Antigravity IDE (กรุณาซิงก์ quota_state.json หรือตั้งค่า QUOTA_JSON_DATA)"
+        "ยังไม่มีข้อมูลโควตาจาก Antigravity IDE (กรุณาซิงก์ quota_state.json)"
     )
 
 
@@ -243,7 +258,7 @@ def send_line_push(token: str, user_id: str, message: str) -> None:
 def main() -> None:
     token = os.environ.get("LINE_CHANNEL_TOKEN", "").strip()
     user_id = os.environ.get("LINE_USER_ID", "").strip()
-    email = os.environ.get("ACCOUNT_EMAIL", "").strip() or "117992721+tonmai7272@users.noreply.github.com"
+    email = os.environ.get("ACCOUNT_EMAIL", "").strip() or "tonmai7272@gmail.com"
 
     if not token or not user_id:
         print("ERROR: LINE_CHANNEL_TOKEN and LINE_USER_ID must be set.", file=sys.stderr)
@@ -276,6 +291,9 @@ def main() -> None:
     except Exception as exc:
         message = build_error_message(email=email, reason=str(exc))
 
+    print("--- Message to send ---")
+    print(message)
+    print("-----------------------")
     send_line_push(token=token, user_id=user_id, message=message)
 
 

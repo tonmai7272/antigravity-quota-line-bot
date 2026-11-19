@@ -1,0 +1,33 @@
+{
+  "updated_at": "2026-11-19T15:22:00+07:00",
+  "userStatus": {
+    "email": "tonmai7272@gmail.com",
+    "cascadeModelConfigData": {
+      "clientModelConfigs": [
+        {"label": "Gemini 4 Neon (High)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Gemini 4 Neon (XHigh)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Gemini 4 Neon (Medium)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Gemini 4 Neon (Low)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Gemini 4 Argon (Medium)", "quotaInfo": {"remainingFraction": 0.96973336, "resetTime": "2026-11-26T08:01:27Z"}},
+        {"label": "Gemini 4 Argon (High)", "quotaInfo": {"remainingFraction": 0.96973336, "resetTime": "2026-11-26T08:01:27Z"}},
+        {"label": "Gemini 4 Argon (Low)", "quotaInfo": {"remainingFraction": 0.96973336, "resetTime": "2026-11-26T08:01:27Z"}},
+        {"label": "Gemini 4 Hydrogen (High)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Gemini 4 Hydrogen (XHigh)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Gemini 4 Hydrogen (Medium)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Gemini 4 Hydrogen (Low)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Orchestrator (Neon)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Orchestrator (Argon)", "quotaInfo": {"remainingFraction": 0.96973336, "resetTime": "2026-11-26T08:01:27Z"}},
+        {"label": "Gemini 3.8 Flash (High)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Gemini 3.8 Flash (Medium)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Gemini 3.8 Flash (Low)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Claude Opus 5.5 (Low)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Claude Opus 5.5 (Medium)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Claude Opus 5.5 (High)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Claude Sonnet 5.5 (Low)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Claude Sonnet 5.5 (Medium)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "Claude Sonnet 5.5 (High)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}},
+        {"label": "GPT-OSS 120B (Medium)", "quotaInfo": {"remainingFraction": 1, "resetTime": "2026-11-19T13:16:54Z"}}
+      ]
+    }
+  }
+}
